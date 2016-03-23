@@ -247,8 +247,23 @@ def glue(api, sellerList, dateRange={}):
 
 	# Override the dates in sellerList with values from dateRange, if provided	
 	if ('from' in dateRange) & ('type' in dateRange):
+		# Remove the list of keys from sellerList - We can only have one search range
+		for o in ['EndTimeFrom','ModTimeFrom','StartTimeFrom']:
+			try:
+				del sellerList[o]
+			except KeyError:
+				continue
+
 		sellerList[rangeType(dateRange['type'])+'TimeFrom'] = dateRange['from']
+
 	if ('to' in dateRange) & ('type' in dateRange):
+		# Remove the list of keys from sellerList - We can only have one search range
+		for o in ['EndTimeTo','ModTimeTo','StartTimeTo']:
+			try:
+				del sellerList[o]
+			except KeyError:
+				continue
+
 		sellerList[rangeType(dateRange['type'])+'TimeTo'] = dateRange['to']
 	
 	
@@ -280,7 +295,7 @@ try:
 
 	# Example usage, returns a dict containing all items of interst (based on the functions above)
 	itemData = glue(api=api, sellerList={}, dateRange={'from':today, 'to': '2016-05-26T23:59:59.999Z', 'type': 'end'})
-
+ 
 	# Store the itemIDs so that we can use them to check which ones were modified
 	itemlist = []
 	for i in itemData:
