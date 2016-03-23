@@ -230,11 +230,26 @@ def glue(api, sellerList, dateRange={}):
 		res['error']['code'] = '2'
 		res['error']['msg'] = 'dateRange doesn\'t exist or is of wrong type, must be dict'
 		return res
+
+	# Switch statement to check which type of dateRange to search by
+	# This can be start/mod/end
+	def rangeType(condition):
+		# Cast the condition to a string
+		condition = str(condition)
+		switch = {
+			'start': 'Start', # Covers StartTimeFrom and StartTimeTo - Items that started in this date range
+			'mod': 'Mod', # Covers ModTimeFrom and ModTimeTo - Items modified in this date range
+			'end': 'End' # Covers EndTimeFrom and EndTimeTo - Items that end within this date range
+		}
+		# Return the approiate text or End if no ID matches
+		return switch.get(condition, 'End')
+				
+
 	# Override the dates in sellerList with values from dateRange, if provided	
 	if('from' in dateRange):
-		sellerList['EndTimeFrom'] = dateRange['from']
+		sellerList[rangeType(dateRange['type'])+'TimeFrom'] = dateRange['from']
 	if('to' in dateRange):
-		sellerList['EndTimeTo'] = dateRange['to']
+		sellerList[rangeType(dateRange['type'])+'TimeTo'] = dateRange['to']
 	
 	
 	seller = getSeller(api, sellerList)
@@ -264,7 +279,12 @@ try:
 	api = Trading(domain=domain, appid=app_id, devid=dev_id, certid=crt_id, token=usr_token, config_file=None, debug=False)
 
 	# Example usage, returns a dict containing all items of interst (based on the functions above)
-	print(glue(api=api, sellerList={}, dateRange={'from':today, 'to': '2016-05-26T23:59:59.999Z'})) 
+	itemData = glue(api=api, sellerList={}, dateRange={'from':today, 'to': '2016-05-26T23:59:59.999Z', 'type': 'end'})
+
+	# Store the itemIDs so that we can use them to check which ones were modified
+	itemlist = []
+	for i in itemData:
+		itemlist.append(i)
 
 except ConnectionError as e:
 	print(e)
