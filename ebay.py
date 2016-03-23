@@ -246,9 +246,9 @@ def glue(api, sellerList, dateRange={}):
 				
 
 	# Override the dates in sellerList with values from dateRange, if provided	
-	if('from' in dateRange):
+	if ('from' in dateRange) & ('type' in dateRange):
 		sellerList[rangeType(dateRange['type'])+'TimeFrom'] = dateRange['from']
-	if('to' in dateRange):
+	if ('to' in dateRange) & ('type' in dateRange):
 		sellerList[rangeType(dateRange['type'])+'TimeTo'] = dateRange['to']
 	
 	
