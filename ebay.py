@@ -1,6 +1,11 @@
 # Imports first
 # This is the sdk found at https://github.com/timotheus/ebaysdk-python
-from ebaysdk.trading import Connection as Trading 
+from ebaysdk.trading import Connection as Trading
+from ebaysdk.exception import ConnectionError, ConnectionResponseError
+
+# Parallel requires Gevent and Grequests modules to be available on the server (requires at least 2.7.5)
+from ebaysdk.parallel import Parallel
+
 import datetime
 
 # Application Settings
@@ -12,9 +17,53 @@ domain = 'api.sandbox.ebay.com'
 # User Identification
 usr_token = ''
 
-# Don't get items that are ending today
-today = datetime.datetime.today()
-today = today.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+# Creates a dateRange list for use with glue
+def setDateRange(days=None, start=None, rangeType=None):
+	# Default to searching for listings ending today
+	if days == None:
+		days = 0
+	else:
+		try:
+			days = int(days)
+		except ValueError:
+			days = 0
+	if rangeType == None:
+		rangeType = 'end'
+	else:
+		try:
+			rangeType = str(rangeType)
+		# This shouldn't happen, but good to have a check out of the gates
+		except ValueError: 
+			rangeType = 'end'
+
+	if start == None:
+		# Begin the search at the current timestamp
+		today = datetime.datetime.today()
+	elif type(start) == 'datetime.datetime':
+		today = start
+	elif type(start) == 'str':
+		try:
+			# Try to cast the string to the datetime type
+			today = datetime.datetime.strptime(start, '%Y-%m-%dT%H:%M:%S.%fZ')
+		except ValueError:
+			# The string wasn't valid to become a datetime, set to today
+			today = datetime.datetime.today()
+	else:
+		today = datetime.datetime.today()
+
+
+	# Set the days argument to search forward more than one day
+	delta = datetime.timedelta(days)
+	
+	# End the search at the future timestamp
+	future = today+delta
+	# Convert our dates into a format that ebay can recognize (ISO 8601)
+	today = today.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+	future = future.strftime("%Y-%m-%dT23:59:59.999Z")
+
+	# If we want to manipulate either today or future, the following converts from a string back into a datetime object
+	# datetime.datetime.strptime(today, '%Y-%m-%dT%H:%M:%S.%fZ')
+	return {'from': today, 'to': future, 'type': rangeType}
 
 # Here are the error codes that we currently have
 # None - No events have happened yet
@@ -291,15 +340,18 @@ def glue(api, sellerList, dateRange={}):
 
 
 try:
-	api = Trading(domain=domain, appid=app_id, devid=dev_id, certid=crt_id, token=usr_token, config_file=None, debug=False)
+	p = Parallel()
+
+	api = Trading(domain=domain, appid=app_id, devid=dev_id, certid=crt_id, token=usr_token, config_file=None, debug=False, parellel=p)
 
 	# Example usage, returns a dict containing all items of interst (based on the functions above)
-	itemData = glue(api=api, sellerList={}, dateRange={'from':today, 'to': '2016-05-26T23:59:59.999Z', 'type': 'end'})
+	itemData = glue(api=api, sellerList={'Pagination': {'EntriesPerPage':'100', 'PageNumber':'1'}}, dateRange=setDateRange(0, 'end'))
  
 	# Store the itemIDs so that we can use them to check which ones were modified
 	itemlist = []
 	for i in itemData:
 		itemlist.append(i)
+
 
 except ConnectionError as e:
 	print(e)
