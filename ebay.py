@@ -7,6 +7,7 @@ from ebaysdk.exception import ConnectionError, ConnectionResponseError
 from ebaysdk.parallel import Parallel
 
 import datetime
+import csv
 
 # Application Settings
 app_id = ''
@@ -16,6 +17,11 @@ domain = 'api.sandbox.ebay.com'
 
 # User Identification
 usr_token = ''
+
+# CSV file data
+csv_path = ''
+csv_delimiter = ','
+csv_quote = '\''
 
 # Creates a dateRange list for use with glue
 def setDateRange(days=None, start=None, rangeType=None):
@@ -59,11 +65,51 @@ def setDateRange(days=None, start=None, rangeType=None):
     future = today+delta
     # Convert our dates into a format that ebay can recognize (ISO 8601)
     today = today.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    # Force the future to be the absolute end of the day
     future = future.strftime("%Y-%m-%dT23:59:59.999Z")
 
     # If we want to manipulate either today or future, the following converts from a string back into a datetime object
     # datetime.datetime.strptime(today, '%Y-%m-%dT%H:%M:%S.%fZ')
     return {'from': today, 'to': future, 'type': rangeType}
+
+# We call this a couple times, so it gets its own function
+def switchDateRange(range=None, list=None):
+    # Switch statement to check which type of dateRange to search by
+    # This can be start/mod/end
+    def rangeType(condition):
+        # Cast the condition to a string
+        condition = str(condition)
+        switch = {
+            'start': 'Start', # Covers StartTimeFrom and StartTimeTo - Items that started in this date range
+            'mod': 'Mod', # Covers ModTimeFrom and ModTimeTo - Items modified in this date range
+            'end': 'End' # Covers EndTimeFrom and EndTimeTo - Items that end within this date range
+        }
+        # Return the approiate text or End if no ID matches
+        return switch.get(condition, 'End')
+                
+
+    # Override the dates in sellerList with values from dateRange, if provided  
+    if ('from' in range) & ('type' in range):
+        # Remove the list of keys from sellerList - We can only have one search range
+        for o in ['EndTimeFrom','ModTimeFrom','StartTimeFrom']:
+            try:
+                del list[o]
+            except KeyError:
+                continue
+
+        list[rangeType(range['type'])+'TimeFrom'] = range['from']
+
+    if ('to' in range) & ('type' in range):
+        # Remove the list of keys from sellerList - We can only have one search range
+        for o in ['EndTimeTo','ModTimeTo','StartTimeTo']:
+            try:
+                del list[o]
+            except KeyError:
+                continue
+
+        list[rangeType(range['type'])+'TimeTo'] = range['to']
+
+    return list
 
 # Here are the error codes that we currently have
 # None - No events have happened yet
@@ -83,15 +129,15 @@ def getSeller(api, list):
     
     # Set our error conditions
     res = { 'error': { 'code': None, 'msg': None, 'fnc': 'getSeller' }, 'apiResponse': {} }
-    if(api == None):
+    if api == None:
         res['error']['code'] = '1'
         res['error']['msg'] = 'api is not set'
         return res
-    if(list == None) | (isinstance(list, dict) != True):
+    if (list == None) | (isinstance(list, dict) != True):
         res['error']['code'] = '2'
         res['error']['msg'] = 'list doesn\'t exist or is of wrong type, must be dict'
         return res
-    if('EndTimeFrom' not in list) | ('EndTimeTo' not in list):
+    if ('EndTimeFrom' not in list) | ('EndTimeTo' not in list):
         res['error']['code'] = '3'
         res['error']['msg'] = 'either "EndTimeFrom" or "EndTimeTo" is not set in list'
         return res
@@ -135,15 +181,15 @@ def getItems(api, itemList, itemArgs={}):
     
     # Set our error conditions
     res = { 'error': { 'code': None, 'msg': None, 'fnc': 'getItems' }, 'apiResponse': {} }
-    if(api == None):
+    if api == None:
         res['error']['code'] = '1'
         res['error']['msg'] = 'api is not set'
         return res
-    if(itemList == None) | (type(itemList) != type([])):
+    if (itemList == None) | (type(itemList) != type([])):
         res['error']['code'] = '2'
         res['error']['msg'] = 'itemList doesn\'t exist or is of wrong type, must be list containing one or more dicts'
         return res
-    if(itemArgs == None) | (isinstance(itemArgs, dict) != True):
+    if (itemArgs == None) | (isinstance(itemArgs, dict) != True):
         res['error']['code'] = '2'
         res['error']['msg'] = 'itemArgs doesn\'t exist or is of wrong type, must be dict'
         return res
@@ -170,6 +216,37 @@ def getItems(api, itemList, itemArgs={}):
     
     # After the loop is complete, return the whole res
     return res
+
+# Use the modTime range and only return data for items that have been modified in the timerange
+# Args we want are the modTime and NewItemFilter=True to get only items that have changed in this timerange
+def checkRevisedItems(api, itemArgs={}, dateRange={}):
+    # api is the connection to the Trading API
+    # itemList is a list containing itemIDs to check for updates
+    # itemArgs is an optional dict that contains extra details to refine the search returned by ebay 
+    res = { 'error': { 'code': None, 'msg': None, 'fnc': 'checkRevisedItems' }, 'apiResponse': {} }
+    if api == None:
+        res['error']['code'] = '1'
+        res['error']['msg'] = 'api is not set'
+        return res
+    if (itemList == None) | (isinstance(itemList, dict) != True):
+        res['error']['code'] = '2'
+        res['error']['msg'] = 'itemList doesn\'t exist or is of wrong type, must be list containing one or more dicts'
+        return res
+    if (itemArgs == None) | (isinstance(itemArgs, dict) != True):
+        res['error']['code'] = '2'
+        res['error']['msg'] = 'itemArgs doesn\'t exist or is of wrong type, must be dict'
+        return res
+
+    itemArgs['NewItemFilter'] = 'True'
+
+    # Switch statement to select the proper dateRange
+    itemArgs = switchDateRange(itemArgs, dateRange)
+
+    # 
+    response = api.execute('GetSellerEvents', itemArgs)
+
+    for i in itemList:
+
     
 # storeItems uses the dict of Items provided by getItems and stores the information we want 
 def storeItems(itemList):
@@ -178,7 +255,7 @@ def storeItems(itemList):
 
     # Set our error conditions
     res = { 'error': { 'code': None, 'msg': None, 'fnc': 'storeItems' }, 'apiResponse': {} }
-    if(itemList == None) | (isinstance(itemList, dict) != True):
+    if (itemList == None) | (isinstance(itemList, dict) != True):
         res['error']['code'] = '2'
         res['error']['msg'] = 'itemList doesn\'t exist or is of wrong type, must be dict'
         return res
@@ -260,66 +337,32 @@ def storeItems(itemList):
     return res
 
 # Glue logic to run all the functions above properly
-def glue(api, sellerList, dateRange={}):
+def glue(api=None, sellerList={}, dateRange={}):
     # api is the connection to the api, this is passed to the functions as called
     # sellerList is the options that you can present ebay for searching (http://developer.ebay.com/DevZone/XML/docs/Reference/ebay/GetSellerEvents.html)
     # dateRange overrides EndTimeFrom and EndTimeTo from sellerList for ease of passing these required data with nothing else
 
     # Set our error conditions
     res = { 'error': { 'code': '0', 'msg': None, 'fnc': 'glue' }, 'apiResponse': {} }
-    if(api == None):
+    if api == None:
         res['error']['code'] = '1'
         res['error']['msg'] = 'api is not set'
         return res
-    if(sellerList == None) | (isinstance(sellerList, dict) != True):
+    if (sellerList == None) | (isinstance(sellerList, dict) != True):
         res['error']['code'] = '2'
         res['error']['msg'] = 'itemList doesn\'t exist or is of wrong type, must be dict'
         return res
-    if(dateRange == None) | (isinstance(dateRange, dict) != True):
+    if (dateRange == None) | (isinstance(dateRange, dict) != True):
         res['error']['code'] = '2'
         res['error']['msg'] = 'dateRange doesn\'t exist or is of wrong type, must be dict'
         return res
 
-    # Switch statement to check which type of dateRange to search by
-    # This can be start/mod/end
-    def rangeType(condition):
-        # Cast the condition to a string
-        condition = str(condition)
-        switch = {
-            'start': 'Start', # Covers StartTimeFrom and StartTimeTo - Items that started in this date range
-            'mod': 'Mod', # Covers ModTimeFrom and ModTimeTo - Items modified in this date range
-            'end': 'End' # Covers EndTimeFrom and EndTimeTo - Items that end within this date range
-        }
-        # Return the approiate text or End if no ID matches
-        return switch.get(condition, 'End')
-                
-
-    # Override the dates in sellerList with values from dateRange, if provided  
-    if ('from' in dateRange) & ('type' in dateRange):
-        # Remove the list of keys from sellerList - We can only have one search range
-        for o in ['EndTimeFrom','ModTimeFrom','StartTimeFrom']:
-            try:
-                del sellerList[o]
-            except KeyError:
-                continue
-
-        sellerList[rangeType(dateRange['type'])+'TimeFrom'] = dateRange['from']
-
-    if ('to' in dateRange) & ('type' in dateRange):
-        # Remove the list of keys from sellerList - We can only have one search range
-        for o in ['EndTimeTo','ModTimeTo','StartTimeTo']:
-            try:
-                del sellerList[o]
-            except KeyError:
-                continue
-
-        sellerList[rangeType(dateRange['type'])+'TimeTo'] = dateRange['to']
-    
+    # Switch statement to select the proper dateRange
+    sellerList = switchDateRange(sellerList, dateRange)
     
     seller = getSeller(api, sellerList)
     if seller['error']['code'] == '0':
         sellerList = seller['apiResponse']
-        print seller['apiResponse']
         seller = None # Unset any data we no-longer need - Saves on memory
             
         items = getItems(api, sellerList)
@@ -346,15 +389,29 @@ try:
     api = Trading(domain=domain, appid=app_id, devid=dev_id, certid=crt_id, token=usr_token, config_file=None, debug=False, parellel=p)
 
     # Example usage, returns a dict containing all items of interst (based on the functions above)
-    itemData = glue(api=api, sellerList={'Pagination': {'EntriesPerPage':'1', 'PageNumber':'1'}}, dateRange=setDateRange())
- 
-    # Store the itemIDs so that we can use them to check which ones were modified
+    itemData = glue(api=api, sellerList={}, dateRange=setDateRange())
     itemlist = []
-    for i in itemData:
-        itemlist.append(i)
 
+    # Write a CSV file containing some of the data we're interested in
+    with open(csv_path, 'wb') as csvfile:
+        Part Number Manufacturer    Condition   Price   Quantity    Description
+        fieldnames = ['Part Number', 'Manufacturer', 'Condition', 'Price', 'Quantity', 'Description']
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames, delimiter=csv_delimiter, quotechar=csv_quote, quoting=csv.QUOTE_MINIMAL)
+
+        for i in itemData:
+            data = {
+                'Part Number': i['mpn'],
+                'Manufacturer': i['mfg'],
+                'Condition': i['condition']['msg'],
+                'Price': i['price']['val']+' '+i['price']['cur'],
+                'Quantity': str(int(i['quantity']['total'])-int(i['quantity']['sold'])),
+                'Description': i['title']
+            }
+
+            writer.writerow(data)
+
+            # Store the itemIDs so that we can use them to check which ones were modified
+            itemlist.append(i)
 
 except ConnectionError as e:
     print(e)
-
-    
