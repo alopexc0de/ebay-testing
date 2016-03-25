@@ -23,6 +23,8 @@ csv_path = ''
 csv_delimiter = ','
 csv_quote = '\''
 
+# We can probably put the DateRange functions into a class
+
 # Creates a dateRange list for use with glue
 def setDateRange(days=None, start=None, rangeType=None):
     # Default to searching for listings ending today
@@ -75,8 +77,21 @@ def setDateRange(days=None, start=None, rangeType=None):
 # We call this a couple times, so it gets its own function
 def switchDateRange(list=None, range=None):
     # Switch statement to check which type of dateRange to search by
+    # Will always return a valid dateRange for use as various itemArgs 
+    # Defaults to a dateRange ending today
+
+    if (range == None) | (isinstance(range, dict) != True):
+        # Sets the default range (items that are ending today)
+        range = setDateRange()
+
+    if (list == None) | (isinstance(list, dict) != True):
+        list = {}
+
     # This can be start/mod/end
-    def rangeType(condition):
+    def rangeType(condition=None):
+        # No condition to check, defaults to End
+        if condition == None:
+            return 'End'
         # Cast the condition to a string
         condition = str(condition)
         switch = {
@@ -87,7 +102,6 @@ def switchDateRange(list=None, range=None):
         # Return the approiate text or End if no ID matches
         return switch.get(condition, 'End')
                 
-
     # Override the dates in sellerList with values from dateRange, if provided  
     if ('from' in range) & ('type' in range):
         # Remove the list of keys from sellerList - We can only have one search range
@@ -142,11 +156,7 @@ def getSeller(api=None, list=None):
         res['error']['msg'] = 'either "EndTimeFrom" or "EndTimeTo" is not set in list'
         return res
     
-    # run the actual command
-    apiResponse = api.execute('GetSellerEvents', list)
-    # Store the response in a dict and unset response
-    res['apiResponse'] = apiResponse.dict()
-    apiResponse = None
+    res['apiResponse'] = api.execute('GetSellerEvents', list).dict()
     
     # Verify that the search returned information
     if res['apiResponse']['ItemArray'] != None:
@@ -205,10 +215,7 @@ def getItems(api=None, itemList=None, itemArgs=None):
         if(k['SellingStatus']['ListingStatus'] != 'Active'):
             continue
         
-        response = api.execute('GetItem', itemArgs)
-        res['apiResponse'][k['ItemID']] = response.dict() 
-        #res['apiResponse'] = { k['ItemID']: response.dict() }
-        response = None
+        res['apiResponse'][k['ItemID']] = api.execute('GetItem', itemArgs).dict()
         
         # We want the error code to only be changed on the first successful iteration
         if res['error']['code'] == None:
@@ -223,7 +230,7 @@ def checkRevisedItems(api=None, itemArgs=None, dateRange=None):
     # api is the connection to the Trading API
     # itemList is a list containing itemIDs to check for updates
     # itemArgs is an optional dict that contains extra details to refine the search returned by ebay 
-    res = { 'error': { 'code': None, 'msg': None, 'fnc': 'checkRevisedItems' }, 'apiResponse': {} }
+    res = { 'error': { 'code': None, 'msg': None, 'fnc': 'checkRevisedItems' }, 'apiResponse': { 'itemIDs': [] } }
     if api == None:
         res['error']['code'] = '1'
         res['error']['msg'] = 'api is not set'
@@ -233,19 +240,30 @@ def checkRevisedItems(api=None, itemArgs=None, dateRange=None):
         res['error']['msg'] = 'itemArgs doesn\'t exist or is of wrong type, must be dict'
         return res
     if (dateRange == None) | (isinstance(dateRange, dict) != True):
-        res['error']['code'] = '2'
-        res['error']['msg'] = 'dateRange doesn\'t exist or is of wrong type, must be dict'
-        return res
+        dateRange = setDateRange()
 
     itemArgs['NewItemFilter'] = 'True'
 
     # Switch statement to select the proper dateRange
     itemArgs = switchDateRange(itemArgs, dateRange)
+    response = api.execute('GetSellerEvents', itemArgs).dict()
 
-    # 
-    response = api.execute('GetSellerEvents', itemArgs)
+    try:    
+        items = response['ItemArray']['Item']
 
-    for i in itemList:
+        # Store the ItemIDs that need to be updated again with getItem
+        for i in items:
+            res['apiResponse']['itemIDs'].append(i['ItemID'])
+    except TypeError:
+        res['apiResponse'] = {'code': '1', 'msg': 'No items were revised in the selected dateRange'}
+
+    response = None
+
+    # No Errors found
+    if res['error']['code'] == None:
+        res['error']['code'] = '0'
+    
+    return res
 
     
 # storeItems uses the dict of Items provided by getItems and stores the information we want 
@@ -353,9 +371,7 @@ def glue(api=None, sellerList=None, dateRange=None):
         res['error']['msg'] = 'itemList doesn\'t exist or is of wrong type, must be dict'
         return res
     if (dateRange == None) | (isinstance(dateRange, dict) != True):
-        res['error']['code'] = '2'
-        res['error']['msg'] = 'dateRange doesn\'t exist or is of wrong type, must be dict'
-        return res
+        dateRange = setDateRange()
 
     # Switch statement to select the proper dateRange
     sellerList = switchDateRange(sellerList, dateRange)
