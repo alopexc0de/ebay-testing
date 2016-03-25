@@ -73,7 +73,7 @@ def setDateRange(days=None, start=None, rangeType=None):
     return {'from': today, 'to': future, 'type': rangeType}
 
 # We call this a couple times, so it gets its own function
-def switchDateRange(range=None, list=None):
+def switchDateRange(list=None, range=None):
     # Switch statement to check which type of dateRange to search by
     # This can be start/mod/end
     def rangeType(condition):
@@ -122,7 +122,7 @@ def switchDateRange(range=None, list=None):
 
 # minor logic checking - We don't want to get trackbacks for silly reasons
 # getSeller gets a list of our itemIDs
-def getSeller(api, list):
+def getSeller(api=None, list=None):
     # api is the connection to the Trading API
     # list is a dict containing required information for ebay to search for (http://developer.ebay.com/DevZone/XML/docs/Reference/ebay/GetSellerEvents.html)
     #   - The datapoints that MUST be defined are EndTimeFrom and EndTimeTo - These select the dateRange that items end on ebay
@@ -173,7 +173,7 @@ def getSeller(api, list):
     return res
 
 # getItems uses the list of ItemIDs provided by getSeller to get specific information about each ItemID
-def getItems(api, itemList, itemArgs={}):
+def getItems(api=None, itemList=None, itemArgs=None):
     # api is the connection to the Trading API
     # itemList is a dict containing ItemIDs and other info as a result of getSeller
     # itemArgs is an optional dict that contains extra details to refine the search returned by ebay (http://developer.ebay.com/DevZone/XML/docs/Reference/ebay/GetItem.html)
@@ -219,7 +219,7 @@ def getItems(api, itemList, itemArgs={}):
 
 # Use the modTime range and only return data for items that have been modified in the timerange
 # Args we want are the modTime and NewItemFilter=True to get only items that have changed in this timerange
-def checkRevisedItems(api, itemArgs={}, dateRange={}):
+def checkRevisedItems(api=None, itemArgs=None, dateRange=None):
     # api is the connection to the Trading API
     # itemList is a list containing itemIDs to check for updates
     # itemArgs is an optional dict that contains extra details to refine the search returned by ebay 
@@ -228,13 +228,13 @@ def checkRevisedItems(api, itemArgs={}, dateRange={}):
         res['error']['code'] = '1'
         res['error']['msg'] = 'api is not set'
         return res
-    if (itemList == None) | (isinstance(itemList, dict) != True):
-        res['error']['code'] = '2'
-        res['error']['msg'] = 'itemList doesn\'t exist or is of wrong type, must be list containing one or more dicts'
-        return res
     if (itemArgs == None) | (isinstance(itemArgs, dict) != True):
         res['error']['code'] = '2'
         res['error']['msg'] = 'itemArgs doesn\'t exist or is of wrong type, must be dict'
+        return res
+    if (dateRange == None) | (isinstance(dateRange, dict) != True):
+        res['error']['code'] = '2'
+        res['error']['msg'] = 'dateRange doesn\'t exist or is of wrong type, must be dict'
         return res
 
     itemArgs['NewItemFilter'] = 'True'
@@ -249,7 +249,7 @@ def checkRevisedItems(api, itemArgs={}, dateRange={}):
 
     
 # storeItems uses the dict of Items provided by getItems and stores the information we want 
-def storeItems(itemList):
+def storeItems(itemList=None):
     # itemList is the apiRequest value presented as a result of getItems 
     #   - This contains every item that matches getItems criteria with the ItemID as the key of further dicts
 
@@ -337,7 +337,7 @@ def storeItems(itemList):
     return res
 
 # Glue logic to run all the functions above properly
-def glue(api=None, sellerList={}, dateRange={}):
+def glue(api=None, sellerList=None, dateRange=None):
     # api is the connection to the api, this is passed to the functions as called
     # sellerList is the options that you can present ebay for searching (http://developer.ebay.com/DevZone/XML/docs/Reference/ebay/GetSellerEvents.html)
     # dateRange overrides EndTimeFrom and EndTimeTo from sellerList for ease of passing these required data with nothing else
