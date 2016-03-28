@@ -26,7 +26,7 @@ csv_quote = '\''
 # We can probably put the DateRange functions into a class
 
 # Creates a dateRange list for use with glue
-def setDateRange(days=None, start=None, rangeType=None):
+def setDateRange(days=None, start=None, stop=None, rangeType=None):
     # Default to searching for listings ending today
     if days == None:
         days = 0
@@ -35,6 +35,7 @@ def setDateRange(days=None, start=None, rangeType=None):
             days = int(days)
         except ValueError:
             days = 0
+
     if rangeType == None:
         rangeType = 'end'
     else:
@@ -43,6 +44,9 @@ def setDateRange(days=None, start=None, rangeType=None):
         # This shouldn't happen, but you never know users
         except ValueError: 
             rangeType = 'end'
+
+    # Set the days argument to search forward more than one day
+    delta = datetime.timedelta(days)
 
     if start == None:
         # Begin the search at the current timestamp
@@ -59,12 +63,18 @@ def setDateRange(days=None, start=None, rangeType=None):
     else:
         today = datetime.datetime.today()
 
-
-    # Set the days argument to search forward more than one day
-    delta = datetime.timedelta(days)
+    if stop != None:
+        if type(stop) == 'datetime.datetime':
+            future = stop
+        elif type(stop) == 'str':
+            try:
+                future = datetime.datetime.strptime(stop, '%Y-%m-%dT%H:%M:%S.%fZ')
+            except ValueError:
+                future = today+delta
+    else:
+        # End the search at the future timestamp
+        future = today+delta
     
-    # End the search at the future timestamp
-    future = today+delta
     # Convert our dates into a format that ebay can recognize (ISO 8601)
     today = today.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
     # Force the future to be the absolute end of the day
@@ -151,9 +161,9 @@ def getSeller(api=None, list=None):
         res['error']['code'] = '2'
         res['error']['msg'] = 'list doesn\'t exist or is of wrong type, must be dict'
         return res
-    if ('EndTimeFrom' not in list) | ('EndTimeTo' not in list):
+    if (('EndTimeFrom' not in list) | ('EndTimeTo' not in list)) & (('StartTimeFrom' not in list) | ('StartTimeTo' not in list)):
         res['error']['code'] = '3'
-        res['error']['msg'] = 'either "EndTimeFrom" or "EndTimeTo" is not set in list'
+        res['error']['msg'] = 'either "StartTime" or "EndTime" is not set in list'
         return res
     
     res['apiResponse'] = api.execute('GetSellerEvents', list).dict()
@@ -199,7 +209,7 @@ def getItems(api=None, itemList=None, itemArgs=None):
         res['error']['code'] = '2'
         res['error']['msg'] = 'itemList doesn\'t exist or is of wrong type, must be list containing one or more dicts'
         return res
-    if (itemArgs == None) | (isinstance(itemArgs, dict) != True):
+    if isinstance(itemArgs, dict) != True:
         res['error']['code'] = '2'
         res['error']['msg'] = 'itemArgs doesn\'t exist or is of wrong type, must be dict'
         return res
@@ -381,7 +391,7 @@ def glue(api=None, sellerList=None, dateRange=None):
         sellerList = seller['apiResponse']
         seller = None # Unset any data we no-longer need - Saves on memory
             
-        items = getItems(api, sellerList)
+        items = getItems(api, sellerList, {})
         if items['error']['code'] == '0':
             sellerList = items['apiResponse']
             
@@ -410,18 +420,38 @@ try:
 
     # Write a CSV file containing some of the data we're interested in
     with open(csv_path, 'wb') as csvfile:
-        Part Number Manufacturer    Condition   Price   Quantity    Description
         fieldnames = ['Part Number', 'Manufacturer', 'Condition', 'Price', 'Quantity', 'Description']
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames, delimiter=csv_delimiter, quotechar=csv_quote, quoting=csv.QUOTE_MINIMAL)
 
+        writer.writerow({'Part Number':'Part Number', 'Manufacturer':'Manufacturer', 'Condition':'Condition', 'Price':'Price', 'Quantity':'Quantity', 'Description':'Description'})
+
         for i in itemData:
+
+            def keyCheck(key):
+                try:
+                    data = itemData[i][key]
+                    return data
+                except KeyError:
+                    data = 'N/a'
+                    return data
+
+            try:
+                price = itemData[i]['price']['val']
+            except KeyError:
+                price = 'N/a'
+
+            try:
+                quantity = str(int(itemData[i]['quantity']['total'])-int(itemData[i]['quantity']['sold']))
+            except KeyError:
+                quantity = 'N/a'
+
             data = {
-                'Part Number': i['mpn'],
-                'Manufacturer': i['mfg'],
-                'Condition': i['condition']['msg'],
-                'Price': i['price']['val']+' '+i['price']['cur'],
-                'Quantity': str(int(i['quantity']['total'])-int(i['quantity']['sold'])),
-                'Description': i['title']
+                'Part Number': keyCheck('mpn'),
+                'Manufacturer': keyCheck('mfg'),
+                'Condition': itemData[i]['condition']['msg'],
+                'Price': price,
+                'Quantity': quantity,
+                'Description': keyCheck('title').encode('utf-8')
             }
 
             writer.writerow(data)
