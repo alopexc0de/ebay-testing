@@ -27,62 +27,58 @@ csv_quote = '\''
 
 # Creates a dateRange list for use with glue
 def setDateRange(days=None, start=None, stop=None, rangeType=None):
-    # Default to searching for listings ending today
-    if days == None:
+    # Default to searching for the current 24 hours, minus 1ms
+
+    # Formats the date presented to it according to what we need, defaults to today
+    def checkDate(theDate=None):
+        if theDate != None:
+            if type(theDate) == type(datetime.datetime.today()):
+                return theDate
+            elif type(theDate) == type(''):
+                try:
+                    return datetime.datetime.strptime(theDate, '%Y-%m-%d')
+                except ValueError:
+                    return datetime.datetime.today()
+            else:
+                return datetime.datetime.today()
+        else:
+            return datetime.datetime.today()
+
+    # Set our days to an int, defaults to 0
+    try:
+        days = int(days)
+    except (TypeError, ValueError):
         days = 0
-    else:
-        try:
-            days = int(days)
-        except ValueError:
-            days = 0
 
-    if rangeType == None:
+    # Set our rangeType to str, defaults to 'end'
+    if rangeType != None:
+        rangeType = str(rangeType)
+    else: 
         rangeType = 'end'
-    else:
-        try:
-            rangeType = str(rangeType)
-        # This shouldn't happen, but you never know users
-        except ValueError: 
-            rangeType = 'end'
 
-    # Set the days argument to search forward more than one day
+    # Set the days argument to search forward/backward more than one day
     delta = datetime.timedelta(days)
 
-    if start == None:
-        # Begin the search at the current timestamp
-        today = datetime.datetime.today()
-    elif type(start) == 'datetime.datetime':
-        today = start
-    elif type(start) == 'str':
-        try:
-            # Try to cast the string to the datetime type
-            today = datetime.datetime.strptime(start, '%Y-%m-%dT%H:%M:%S.%fZ')
-        except ValueError:
-            # The string wasn't valid to become a datetime, set to today
-            today = datetime.datetime.today()
-    else:
-        today = datetime.datetime.today()
+    start_time = checkDate(start)
 
     if stop != None:
-        if type(stop) == 'datetime.datetime':
-            future = stop
-        elif type(stop) == 'str':
-            try:
-                future = datetime.datetime.strptime(stop, '%Y-%m-%dT%H:%M:%S.%fZ')
-            except ValueError:
-                future = today+delta
+        end_time = checkDate(stop)
     else:
-        # End the search at the future timestamp
-        future = today+delta
+        end_time = start_time + delta
     
-    # Convert our dates into a format that ebay can recognize (ISO 8601)
-    today = today.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    # Convert our dates into a format that the api can recognize (ISO 8601)
+    start_time = start_time.strftime("%Y-%m-%dT00:00:00.000Z")
     # Force the future to be the absolute end of the day
-    future = future.strftime("%Y-%m-%dT23:59:59.999Z")
+    end_time = end_time.strftime("%Y-%m-%dT23:59:59.999Z")
 
-    # If we want to manipulate either today or future, the following converts from a string back into a datetime object
-    # datetime.datetime.strptime(today, '%Y-%m-%dT%H:%M:%S.%fZ')
-    return {'from': today, 'to': future, 'type': rangeType}
+    # if the end_time is in the past, reverse order (EG, the delta is a negative number)
+    if end_time < start_time:
+        start_time_old = start_time
+        start_time = end_time
+        end_time = start_time_old
+
+    return {'from': start_time, 'to': end_time, 'type': rangeType}
+
 
 # We call this a couple times, so it gets its own function
 def switchDateRange(list=None, range=None):
@@ -415,7 +411,9 @@ try:
     api = Trading(domain=domain, appid=app_id, devid=dev_id, certid=crt_id, token=usr_token, config_file=None, debug=False, parellel=p)
 
     # Example usage, returns a dict containing all items of interst (based on the functions above)
-    itemData = glue(api=api, sellerList={}, dateRange=setDateRange())
+    # To import a whole lot of data from ebay, we need to pull in dateRange increments of ~20 days
+    # Easiest way would be to have a starting date and then look forward 20 days with the delta
+    itemData = glue(api=api, sellerList={}, dateRange={'from':'2016-03-01T00:00:00.000Z', 'to': '2016-03-28T23:59:59.999Z', 'type':'start'})
     itemlist = []
 
     # Write a CSV file containing some of the data we're interested in
